@@ -42,10 +42,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Lib.Harmony" Version="2.3.6" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<Reference Include="mscorlib">
 			<HintPath>$(COI_ROOT)\Captain of Industry_Data\Managed\mscorlib.dll</HintPath>
 		</Reference>
@@ -324,7 +320,6 @@
 		<Copy SourceFiles="$(ProjectDir)\config.json" DestinationFolder="$(COI_MODS)\$(TargetName)" ContinueOnError="true" />
 		<Copy SourceFiles="$(ProjectDir)\readme.txt" DestinationFolder="$(COI_MODS)\$(TargetName)" ContinueOnError="true" />
 		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(COI_MODS)\$(TargetName)\" />
-		<Copy SourceFiles="$(TargetDir)0Harmony.dll" DestinationFolder="$(COI_MODS)\$(TargetName)\" />
 		<Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(COI_MODS)\$(TargetName)\" Condition="'$(Configuration)' == 'Debug'" />
 		<Copy SourceFiles="@(AssetBundles)" DestinationFolder="$(COI_MODS)\$(TargetName)\AssetBundles" />
 		<!-- Compress-Archive on a directory path (without \*) includes the directory name as root in the zip. -->

@@ -4,7 +4,7 @@
 	"display_name": "Resource Ledger",
 	"description_short": "Shows net production and consumption per product.",
 	"authors": [ "JT-Turbo" ],
-	"primary_dlls": [ "0Harmony.dll", "Coipond.dll" ],
+	"primary_dlls": [ "Coipond.dll" ],
 	"non_locking_dll_load": true,
 	"can_add_to_saved_game": true,
 	"can_remove_from_saved_game": true
