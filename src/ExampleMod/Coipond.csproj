@@ -2,6 +2,8 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <TargetFramework>net48</TargetFramework>
+	<LangVersion>latest</LangVersion>
+	<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <Configurations>Debug;Release</Configurations>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <WarningLevel>9999</WarningLevel>
@@ -24,12 +26,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Lib.Harmony" Version="2.3.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp">
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="Mafi">
       <HintPath>$(COI_ROOT)\Captain of Industry_Data\Managed\Mafi.dll</HintPath>
     </Reference>
     <Reference Include="Mafi.Core">
       <HintPath>$(COI_ROOT)\Captain of Industry_Data\Managed\Mafi.Core.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Mafi.Base">
       <HintPath>$(COI_ROOT)\Captain of Industry_Data\Managed\Mafi.Base.dll</HintPath>
@@ -89,6 +99,10 @@
       <HintPath>$(COI_ROOT)\Captain of Industry_Data\Managed\Unity.VectorGraphics.dll</HintPath>
     </Reference>
   </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command=":: copy the freshly-built DLL&#xA;xcopy /Y /I &quot;$(TargetPath)&quot; &quot;%25APPDATA%25\Captain of Industry\Mods\Coipond\&quot;&#xA;&#xA;:: (optional) copy the PDB for easier stack-traces&#xA;xcopy /Y /I &quot;$(TargetDir)$(TargetName).pdb&quot; &quot;%25APPDATA%25\Captain of Industry\Mods\Coipond\&quot;&#xA;" />
+  </Target>
   <!--<Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition=" '$(ProjectDir)' != '*Undefined*' ">
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProjectDir)..\ExampleMod.Unity\Assets\Dlls\" />
     <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ProjectDir)..\ExampleMod.Unity\Assets\Dlls\" />
