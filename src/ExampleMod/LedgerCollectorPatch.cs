@@ -18,20 +18,55 @@ namespace CoipondMod
     \*───────────────────────────────────────────────────────────────────────────*/
     internal static class Fix32Ext
     {
-        // works on every public build from 0.4.x to 0.7.6a
+        // works on every public build from 0.4.x to 0.8.x (no `dynamic` – the game
+        // doesn't ship a runtime Microsoft.CSharp.dll)
         public static double ToDouble(this object fx)
         {
             if (fx == null) return 0;
+            if (fx is IConvertible c) return c.ToDouble(null);
 
-            dynamic d = fx;
-            try { return (double)d; } catch { /* explicit cast missing */ }
-            try { return (double)d.AsFloat; } catch { /* 0.7.5-0.7.6          */ }
-            try { return (double)d.Float; } catch { /* ≤0.7.4              */ }
+            var t = fx.GetType();
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                if ((m.Name == "op_Explicit" || m.Name == "op_Implicit")
+                    && (m.ReturnType == typeof(double) || m.ReturnType == typeof(float))
+                    && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == t)
+                    return Convert.ToDouble(m.Invoke(null, new[] { fx }));
+
+            foreach (var n in new[] { "ToDouble", "ToFloat" })
+                if (t.GetMethod(n, Type.EmptyTypes) is MethodInfo mi) return Convert.ToDouble(mi.Invoke(fx, null));
+
+            var v = Refl.Get(fx, "AsFloat", "Float");                 // 0.7.x
+            if (v != null) return Convert.ToDouble(v);
 
             // fallback: raw fixed-point value (1 << 12)
-            var raw = (int)fx.GetType().GetField("RawValue").GetValue(fx);
-            return raw / 4096.0;
+            var raw = Refl.Get(fx, "RawValue");
+            return raw != null ? Convert.ToDouble(raw) / 4096.0 : 0;
         }
+    }
+
+    /*───────────────────────────────────────────────────────────────────────────*\
+    |*  SMALL HELPER: late-bound member access by name (replaces `dynamic`)     *|
+    \*───────────────────────────────────────────────────────────────────────────*/
+    internal static class Refl
+    {
+        const BindingFlags ALL = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        // first property/field named in `names` that exists on obj
+        public static object Get(object obj, params string[] names)
+        {
+            if (obj == null) return null;
+            var t = obj.GetType();
+            foreach (var n in names)
+            {
+                if (t.GetProperty(n, ALL) is PropertyInfo p && p.GetIndexParameters().Length == 0) return p.GetValue(obj);
+                if (t.GetField(n, ALL) is FieldInfo f) return f.GetValue(obj);
+            }
+            return null;
+        }
+
+        // first collection named in `names`; works for struct elements too
+        public static IEnumerable<object> GetList(object obj, params string[] names) =>
+            Get(obj, names) is IEnumerable e ? e.Cast<object>() : Enumerable.Empty<object>();
     }
 
     /*───────────────────────────────────────────────────────────────────────────*\
@@ -46,7 +81,7 @@ namespace CoipondMod
             AccessTools.Field(typeof(EntitiesManager), "m_entitiesLinear")
             ?? throw new Exception("m_entitiesLinear not found");
 
-        static int _frame;   // 60 ticks ≈ 1 sec
+        static int _frame;   // 10 ticks/s → 60 ticks ≈ 6 s at 1x
 
         /*───────────────────────────────────────────────────────────────────*/
         /*  Post-fix                                                         */
@@ -66,27 +101,27 @@ namespace CoipondMod
             foreach (var e in ents)
             {
                 var t = e.GetType();
-                dynamic r = GetRunningRecipe(e, t);
-                if (r == null) continue;                     // ★ CHANGED (no Duration probe here)
+                object r = GetRunningRecipe(e, t);
+                if (r == null) continue;
 
                 /* -------- duration (sec) -------- */
-                double sec = GetDurationSeconds(r);          // ★ NEW
+                double sec = GetDurationSeconds(r);
                 if (sec < 1e-3) continue;                    // skip “instant” recipes
 
                 double cpm = 60 / sec;                      // cycles-per-minute
 
                 /* -------- ingredients -------- */
-                foreach (dynamic ing in GetList(r, "Ingredients", "Inputs"))   // ★ NEW
-                    Add((ProductProto)ing.Proto, -Fix32Ext.ToDouble(ing.Count) * cpm);
+                foreach (var ing in Refl.GetList(r, "Ingredients", "Inputs"))
+                    Add(Refl.Get(ing, "Product", "Proto") as ProductProto, -Fix32Ext.ToDouble(Refl.Get(ing, "Count", "Quantity")) * cpm);
 
                 /* -------- products -------- */
-                foreach (dynamic prd in GetList(r, "Products", "Outputs"))     // ★ NEW
-                    Add((ProductProto)prd.Proto, Fix32Ext.ToDouble(prd.Count) * cpm);
+                foreach (var prd in Refl.GetList(r, "Products", "Outputs", "Results"))
+                    Add(Refl.Get(prd, "Product", "Proto") as ProductProto, Fix32Ext.ToDouble(Refl.Get(prd, "Count", "Quantity")) * cpm);
             }
         }
 
         /*──────────────── helper: fetch the active recipe (all builds) ───────────────*/
-        static dynamic GetRunningRecipe(object mach, Type t)
+        static object GetRunningRecipe(object mach, Type t)
         {
             // ❶ WorkingRecipeSlot → RecipeState → Proto
             var slot = t.GetProperty("WorkingRecipeSlot", ALL)?.GetValue(mach);
@@ -135,38 +170,20 @@ namespace CoipondMod
         }
 
         /*──────────────── helper: duration in seconds (all builds) ───────────────*/
-        static double GetDurationSeconds(dynamic recipe)            // ★ NEW
+        internal static double GetDurationSeconds(object recipe)
         {
-            var tR = (Type)recipe.GetType();
+            var dur = Refl.Get(recipe, "Duration");                 // Duration struct
+            if (dur != null) return Fix32Ext.ToDouble(Refl.Get(dur, "Seconds"));
 
-            var pDuration = tR.GetProperty("Duration");        // ≤ 0.7.4
-            var pDurationTicks = tR.GetProperty("DurationTicks");   // ≥ 0.7.5
-
-            if (pDuration != null)
-            {
-                dynamic dur = pDuration.GetValue(recipe);           // Duration struct
-                return Fix32Ext.ToDouble(dur?.Seconds);
-            }
-            if (pDurationTicks != null)
-            {
-                return Fix32Ext.ToDouble(pDurationTicks.GetValue(recipe));
-            }
-            return 0;                                               // fallback
-        }
-
-        /*──────────────── helper: fetch Ingredients / Products (name changed once) ─*/
-        static IEnumerable<object> GetList(dynamic recipe, string a, string b) // ★ NEW
-        {
-            var t = (Type)recipe.GetType();
-            return (IEnumerable<object>)
-                   (t.GetProperty(a)?.GetValue(recipe)
-                 ?? t.GetProperty(b)?.GetValue(recipe)
-                 ?? Array.Empty<object>());
+            // ≥ 0.7.5 – ticks at 10 ticks/sec
+            var ticks = Refl.Get(recipe, "DurationTicks");
+            return ticks != null ? Fix32Ext.ToDouble(ticks) / 10 : 0;
         }
 
         /*──────────────── helper: accumulate flow ────────────────────────────────*/
         static void Add(ProductProto proto, double delta)
         {
+            if (proto == null) return;
             if (proto is LooseProductProto lp) LedgerState.Loose[lp] = LedgerState.Loose.TryGetValue(lp, out var v) ? v + delta : delta;
             else if (proto is FluidProductProto fp) LedgerState.Fluids[fp] = LedgerState.Fluids.TryGetValue(fp, out var v) ? v + delta : delta;
             else if (proto is CountableProductProto cp) LedgerState.Items[cp] = LedgerState.Items.TryGetValue(cp, out var v) ? v + delta : delta;

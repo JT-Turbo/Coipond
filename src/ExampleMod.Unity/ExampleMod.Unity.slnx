@@ -1,0 +1,4 @@
+﻿<Solution>
+	<Project Path="ExampleMod.Editor.csproj" />
+	<Project Path="ExampleMod.Unity.csproj" />
+</Solution>

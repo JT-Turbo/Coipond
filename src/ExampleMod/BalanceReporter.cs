@@ -15,7 +15,7 @@ namespace CoipondMod
     internal static class BalanceReporter
     {
         /* ─── CONFIG ─── */
-        const int TICKS_INTERVAL = 600;      // every ~10 s
+        const int TICKS_INTERVAL = 600;      // 10 ticks/s → every ~60 s at 1x
         const BindingFlags ALL = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         static readonly FieldInfo ENTITIES_F =
             AccessTools.Field(typeof(EntitiesManager), "m_entitiesLinear")
@@ -77,23 +77,25 @@ namespace CoipondMod
 
             foreach (var recipe in GetRecipes(ent, tEnt))
             {
-                double cpm = 60.0 / GetDurationSeconds(recipe) * GetDurationMult(ent, tEnt);
+                double sec = LedgerCollectorPatch.GetDurationSeconds(recipe);
+                if (sec < 1e-3) continue;                    // skip “instant” recipes
+                double cpm = 60.0 / sec * GetDurationMult(ent, tEnt);
 
-                foreach (var pq in GetList(recipe, "Inputs", "Ingredients"))
-                    Add(flow, (ProductProto)pq.Product, -Fix32Ext.ToDouble(pq.Count) * cpm);
+                foreach (var pq in Refl.GetList(recipe, "Inputs", "Ingredients"))
+                    Add(flow, Refl.Get(pq, "Product", "Proto") as ProductProto, -Fix32Ext.ToDouble(Refl.Get(pq, "Count", "Quantity")) * cpm);
 
-                foreach (var pq in GetList(recipe, "Results", "Products", "Outputs"))
-                    Add(flow, (ProductProto)pq.Product, Fix32Ext.ToDouble(pq.Count) * cpm);
+                foreach (var pq in Refl.GetList(recipe, "Results", "Products", "Outputs"))
+                    Add(flow, Refl.Get(pq, "Product", "Proto") as ProductProto, Fix32Ext.ToDouble(Refl.Get(pq, "Count", "Quantity")) * cpm);
             }
             return flow;
         }
 
         /* active / assigned recipes (works for every machine) */
-        static IEnumerable<dynamic> GetRecipes(object e, Type t)
+        static IEnumerable<object> GetRecipes(object e, Type t)
         {
             // multi-recipe machines (RecipesAssigned)
-            var assigned = t.GetProperty("RecipesAssigned", ALL)?.GetValue(e) as IEnumerable<object>;
-            if (assigned != null && assigned.Any()) return assigned;
+            var assigned = Refl.GetList(e, "RecipesAssigned").ToList();
+            if (assigned.Count > 0) return assigned;
 
             // single recipe – WorkingRecipeSlot / LastRecipeInProgress / legacy
             object tryProto(object obj) =>
@@ -107,16 +109,7 @@ namespace CoipondMod
                 tryProto(UnwrapOption(t.GetProperty("LastRecipeInProgress", ALL)?.GetValue(e))) ??
                 tryProto(t.GetProperty("CurrentRecipe", ALL)?.GetValue(e));
 
-            return proto == null ? Array.Empty<dynamic>() : new[] { proto };
-        }
-
-        static double GetDurationSeconds(dynamic recipe)
-        {
-            try { return recipe.Duration.Seconds; }          // ≤0.7.4
-            catch { /* ignore */ }
-
-            try { return Fix32Ext.ToDouble(recipe.DurationTicks); } // ≥0.7.5
-            catch { return 0; }
+            return proto == null ? Array.Empty<object>() : new[] { proto };
         }
 
         static double GetDurationMult(object ent, Type tEnt)
@@ -126,19 +119,10 @@ namespace CoipondMod
             return p != null ? Fix32Ext.ToDouble(p.GetValue(ent)) : 1;
         }
 
-        static IEnumerable<dynamic> GetList(dynamic recipe, params string[] names)
-        {
-            var tR = (Type)recipe.GetType();
-            foreach (var n in names)
-            {
-                var prop = tR.GetProperty(n, ALL);
-                if (prop != null) return (IEnumerable<dynamic>)prop.GetValue(recipe);
-            }
-            return Array.Empty<dynamic>();
-        }
-
         static void Add(Dictionary<ProductProto, double> dict, ProductProto p, double d)
-            => dict[p] = dict.TryGetValue(p, out var v) ? v + d : d;
+        {
+            if (p != null) dict[p] = dict.TryGetValue(p, out var v) ? v + d : d;
+        }
 
         static object UnwrapOption(object opt)
         {

@@ -1,27 +1,20 @@
 ﻿// Coipond.cs  ── your Resource-Ledger mod’s root class
 using HarmonyLib;
 using Mafi;
-using Mafi.Base;
-using Mafi.Core;
+using Mafi.Collections;
 using Mafi.Core.Mods;
-using Mafi.Core.Prototypes;   // for ProtoRegistrator
 
 namespace CoipondMod;          // namespace can be anything
 
 public sealed class Coipond : DataOnlyMod
 {
-    public override string Name => "Resource Ledger";
-    public override int Version => 1;
-
-    // Constructor lists dependencies exactly like ExampleMod.
-    // They’re injected by the game – you don’t need to use the variables
-    // (but having them proves the mods were loaded first).
-    public Coipond(CoreMod coreMod, BaseMod baseMod)
+    // Name/version now come from manifest.json (Update 4+).
+    public Coipond(ModManifest manifest) : base(manifest)
     {
-        Log.Info($"{Name}: constructed");
+        Log.Info("Coipond: constructed");
 
         // Harmony setup – unique ID for your mod!
-        var harmony = new Harmony("com.yourname.coi.resourceledger");
+        var harmony = new Harmony("com.jtturbo.coi.coipond");
         harmony.PatchAll();          // apply every [HarmonyPatch] in this DLL
     }
 
@@ -29,5 +22,9 @@ public sealed class Coipond : DataOnlyMod
     public override void RegisterPrototypes(ProtoRegistrator registrator)
     {
         // No prototypes to add now, leave it empty.
+    }
+
+    public override void MigrateJsonConfig(VersionSlim savedVersion, Dict<string, object> savedValues)
+    {
     }
 }
